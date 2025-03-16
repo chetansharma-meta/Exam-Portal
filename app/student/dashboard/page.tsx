@@ -1,0 +1,8 @@
+// app/student/dashboard/page.tsx
+"use client";
+
+import StudentDashboard from "@/components/student/StudentDashboard";
+
+export default function StudentDashboardPage() {
+  return <StudentDashboard />;
+}
