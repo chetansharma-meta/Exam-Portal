@@ -2,6 +2,7 @@
 import { create } from 'zustand';
 import { persist, PersistOptions } from 'zustand/middleware';
 import { User, Student, Teacher, Exam, ExamSubmission } from './types';
+import apiService from '@/lib/api';
 
 // Generate a unique ID
 export const generateId = () => Math.random().toString(36).substring(2, 9);
@@ -22,16 +23,22 @@ interface AppState {
   submissions: ExamSubmission[];
   pdfSubmissions: PdfSubmission[];
   currentUser: User | null;
+  subjects: string[];
+  isLoading: boolean;
+  error: string | null;
 
   // Auth methods
-  login: (username: string, password: string) => User | null;
+  login: (username: string, password: string, role: 'student' | 'teacher') => Promise<User | null>;
   logout: () => void;
-  register: (user: Omit<Student | Teacher, 'id'>) => User;
+  registerStudent: (userData: Omit<Student, 'id' | 'role'>) => Promise<User>;
+  registerTeacher: (userData: Omit<Teacher, 'id' | 'role'>) => Promise<User>;
 
   // Exam methods
   createExam: (exam: Omit<Exam, 'id'>) => Exam;
   getExams: (teacherId?: string) => Exam[];
   getExam: (id: string) => Exam | undefined;
+  fetchQuestions: () => Promise<void>;
+  fetchSubjects: () => Promise<void>;
 
   // Submission methods
   submitExam: (submission: Omit<ExamSubmission, 'id' | 'submittedAt'>) => ExamSubmission;
@@ -58,29 +65,14 @@ type StorageValue = {
     submissions: ExamSubmission[];
     pdfSubmissions: SerializablePdfSubmission[];
     currentUser: User | null;
+    subjects: string[];
   };
   version: number;
 }
 
-// Sample data
-const initialUsers: User[] = [
-  { id: '1', name: 'Admin Teacher', role: 'teacher', password: 'teacher123' },
-  { id: '2', name: 'John Student', role: 'student', password: 'student123', rollNo: '211550001' } as Student,
-];
-
-const initialExams: Exam[] = [
-  {
-    id: '1',
-    title: 'Science Test',
-    createdBy: '1',
-    questions: [
-      { id: '1', text: 'What are the main causes of climate change?', difficulty: 'medium' },
-      { id: '2', text: 'Explain the process of photosynthesis.', difficulty: 'hard' },
-    ],
-    duration: 3600, // 1 hour
-    isActive: true,
-  }
-];
+// Sample data (will be replaced with API data)
+const initialUsers: User[] = [];
+const initialExams: Exam[] = [];
 
 // Define custom storage with proper types
 const customStorage = {
@@ -134,27 +126,127 @@ export const useAppStore = create<AppState>()(
       submissions: [],
       pdfSubmissions: [],
       currentUser: null,
+      subjects: [],
+      isLoading: false,
+      error: null,
 
-      login: (username, password) => {
-        const user = get().users.find(
-          u => (u.role === 'student' ? (u as Student).rollNo === username : u.name === username) &&
-          u.password === password
-        );
-        if (user) {
-          set({ currentUser: user });
+      login: async (username, password, role) => {
+        set({ isLoading: true, error: null });
+
+        try {
+          let userData;
+
+          if (role === 'student') {
+            userData = await apiService.loginStudent({
+              roll_no: username,
+              password
+            });
+          } else {
+            userData = await apiService.loginTeacher({
+              username,
+              password
+            });
+          }
+
+          // Transform server response to match your User type
+          const user: User = {
+            id: userData.id || generateId(),
+            name: userData.name,
+            role: role,
+            password: password,
+            ...(role === 'student' ? { rollNo: username } : {})
+          };
+
+          set({ currentUser: user, isLoading: false });
           return user;
+        } catch (error) {
+          console.error('Login error:', error);
+          set({
+            isLoading: false,
+            error: error instanceof Error ? error.message : 'Failed to login'
+          });
+          return null;
         }
-        return null;
       },
 
       logout: () => {
         set({ currentUser: null });
       },
 
-      register: (userData) => {
-        const newUser = { ...userData, id: generateId() };
-        set(state => ({ users: [...state.users, newUser as User] }));
-        return newUser as User;
+      registerStudent: async (userData) => {
+        set({ isLoading: true, error: null });
+
+        try {
+          const response = await apiService.registerStudent({
+            name: userData.name,
+            roll_no: userData.rollNo,
+            password: userData.password,
+            department: userData.department || '',
+            semester: userData.semester || ''
+          });
+
+          // Create a new user from the response
+          const newUser: Student = {
+            id: response.id || generateId(),
+            name: userData.name,
+            role: 'student',
+            password: userData.password,
+            rollNo: userData.rollNo,
+            department: userData.department,
+            semester: userData.semester
+          };
+
+          set(state => ({
+            users: [...state.users, newUser],
+            isLoading: false
+          }));
+
+          return newUser;
+        } catch (error) {
+          console.error('Register student error:', error);
+          set({
+            isLoading: false,
+            error: error instanceof Error ? error.message : 'Failed to register student'
+          });
+          throw error;
+        }
+      },
+
+      registerTeacher: async (userData) => {
+        set({ isLoading: true, error: null });
+
+        try {
+          const response = await apiService.registerTeacher({
+            name: userData.name,
+            username: userData.username || userData.name,
+            password: userData.password,
+            department: userData.department || ''
+          });
+
+          // Create a new user from the response
+          const newUser: Teacher = {
+            id: response.id || generateId(),
+            name: userData.name,
+            role: 'teacher',
+            password: userData.password,
+            username: userData.username,
+            department: userData.department
+          };
+
+          set(state => ({
+            users: [...state.users, newUser],
+            isLoading: false
+          }));
+
+          return newUser;
+        } catch (error) {
+          console.error('Register teacher error:', error);
+          set({
+            isLoading: false,
+            error: error instanceof Error ? error.message : 'Failed to register teacher'
+          });
+          throw error;
+        }
       },
 
       createExam: (examData) => {
@@ -175,11 +267,42 @@ export const useAppStore = create<AppState>()(
         return get().exams.find(exam => exam.id === id);
       },
 
+      fetchQuestions: async () => {
+        set({ isLoading: true, error: null });
+
+        try {
+          const questions = await apiService.getQuestions();
+          // Process questions as needed
+          set({ isLoading: false });
+        } catch (error) {
+          console.error('Fetch questions error:', error);
+          set({
+            isLoading: false,
+            error: error instanceof Error ? error.message : 'Failed to fetch questions'
+          });
+        }
+      },
+
+      fetchSubjects: async () => {
+        set({ isLoading: true, error: null });
+
+        try {
+          const subjects = await apiService.getSubjects();
+          set({ subjects, isLoading: false });
+        } catch (error) {
+          console.error('Fetch subjects error:', error);
+          set({
+            isLoading: false,
+            error: error instanceof Error ? error.message : 'Failed to fetch subjects'
+          });
+        }
+      },
+
       submitExam: (submissionData) => {
         const newSubmission = {
           ...submissionData,
           id: generateId(),
-          submittedAt: new Date(),
+          submittedAt: new Date().toISOString(),
         };
         set(state => ({ submissions: [...state.submissions, newSubmission] }));
         return newSubmission;
@@ -218,7 +341,7 @@ export const useAppStore = create<AppState>()(
         );
       },
 
-      // New PDF submission methods
+      // PDF submission methods
       savePdfForTeacher: (pdfData) => {
         const newPdfSubmission = {
           ...pdfData,

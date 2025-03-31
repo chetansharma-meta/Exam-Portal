@@ -9,11 +9,17 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppStore } from "@/lib/store";
 import { UserRole } from "@/lib/types";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function LoginForm() {
   const router = useRouter();
   const login = useAppStore(state => state.login);
-  const register = useAppStore(state => state.register);
+  const registerStudent = useAppStore(state => state.registerStudent);
+  const registerTeacher = useAppStore(state => state.registerTeacher);
+  const fetchSubjects = useAppStore(state => state.fetchSubjects);
+  const subjects = useAppStore(state => state.subjects);
+  const isLoading = useAppStore(state => state.isLoading);
+  const error = useAppStore(state => state.error);
 
   const [activeTab, setActiveTab] = useState<"login" | "register">("login");
   const [role, setRole] = useState<UserRole>("student");
@@ -26,24 +32,36 @@ export default function LoginForm() {
   // Register form state
   const [registerName, setRegisterName] = useState("");
   const [registerRollNo, setRegisterRollNo] = useState("");
+  const [registerUsername, setRegisterUsername] = useState("");
   const [registerPassword, setRegisterPassword] = useState("");
   const [registerConfirmPassword, setRegisterConfirmPassword] = useState("");
   const [registerError, setRegisterError] = useState("");
+  const [department, setDepartment] = useState("");
+  const [semester, setSemester] = useState("");
 
-  const handleLogin = (e: React.FormEvent) => {
+  // Fetch subjects when component mounts
+  useState(() => {
+    fetchSubjects();
+  });
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError("");
 
-    const user = login(loginUsername, loginPassword);
+    try {
+      const user = await login(loginUsername, loginPassword, role);
 
-    if (user) {
-      router.push(user.role === "teacher" ? "/teacher/dashboard" : "/student/dashboard");
-    } else {
-      setLoginError("Invalid credentials. Please try again.");
+      if (user) {
+        router.push(user.role === "teacher" ? "/teacher/dashboard" : "/student/dashboard");
+      } else {
+        setLoginError("Invalid credentials. Please try again.");
+      }
+    } catch (error) {
+      setLoginError("Login failed. Please try again.");
     }
   };
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setRegisterError("");
 
@@ -53,27 +71,33 @@ export default function LoginForm() {
     }
 
     try {
-      const userData = role === "student"
-        ? {
-            name: registerName,
-            rollNo: registerRollNo,
-            password: registerPassword,
-            role: "student" as const,
-          }
-        : {
-            name: registerName,
-            password: registerPassword,
-            role: "teacher" as const,
-          };
+      if (role === "student") {
+        await registerStudent({
+          name: registerName,
+          rollNo: registerRollNo,
+          password: registerPassword,
+          department,
+          semester,
+        });
+      } else {
+        await registerTeacher({
+          name: registerName,
+          username: registerUsername,
+          password: registerPassword,
+          department,
+        });
+      }
 
-      register(userData);
       setActiveTab("login");
 
       // Clear form
       setRegisterName("");
       setRegisterRollNo("");
+      setRegisterUsername("");
       setRegisterPassword("");
       setRegisterConfirmPassword("");
+      setDepartment("");
+      setSemester("");
     } catch (error) {
       setRegisterError("Registration failed. Please try again.");
     }
@@ -135,8 +159,11 @@ export default function LoginForm() {
             </div>
 
             {loginError && <p className="text-red-500 text-sm">{loginError}</p>}
+            {error && <p className="text-red-500 text-sm">{error}</p>}
 
-            <Button type="submit" className="w-full">Login</Button>
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? "Logging in..." : "Login"}
+            </Button>
           </form>
         </TabsContent>
 
@@ -152,7 +179,7 @@ export default function LoginForm() {
               />
             </div>
 
-            {role === "student" && (
+            {role === "student" ? (
               <div>
                 <Label htmlFor="register-roll-no">Roll Number</Label>
                 <Input
@@ -161,6 +188,46 @@ export default function LoginForm() {
                   onChange={(e) => setRegisterRollNo(e.target.value)}
                   required
                 />
+              </div>
+            ) : (
+              <div>
+                <Label htmlFor="register-username">Username</Label>
+                <Input
+                  id="register-username"
+                  value={registerUsername}
+                  onChange={(e) => setRegisterUsername(e.target.value)}
+                  required
+                />
+              </div>
+            )}
+
+            <div>
+              <Label htmlFor="register-department">Department</Label>
+              <Select onValueChange={setDepartment} value={department}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select Department" />
+                </SelectTrigger>
+                <SelectContent>
+                  {subjects.map(subject => (
+                    <SelectItem key={subject} value={subject}>{subject}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {role === "student" && (
+              <div>
+                <Label htmlFor="register-semester">Semester</Label>
+                <Select onValueChange={setSemester} value={semester}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select Semester" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map(sem => (
+                      <SelectItem key={sem} value={sem.toString()}>Semester {sem}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
 
@@ -207,8 +274,11 @@ export default function LoginForm() {
             </div>
 
             {registerError && <p className="text-red-500 text-sm">{registerError}</p>}
+            {error && <p className="text-red-500 text-sm">{error}</p>}
 
-            <Button type="submit" className="w-full">Register</Button>
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? "Registering..." : "Register"}
+            </Button>
           </form>
         </TabsContent>
       </Tabs>

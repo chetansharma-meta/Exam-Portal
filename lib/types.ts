@@ -1,55 +1,76 @@
+
 // lib/types.ts
 
+// User roles
 export type UserRole = 'student' | 'teacher';
 
 export interface User {
   id: string;
   name: string;
-  role: UserRole;
-  password: string; // In a real app, never store plain text passwords
+  role: 'student' | 'teacher';
+  password: string;
 }
 
 export interface Student extends User {
   role: 'student';
   rollNo: string;
+  department?: string;
+  semester?: string;
 }
 
 export interface Teacher extends User {
   role: 'teacher';
-  subject?: string;
+  username?: string;
+  department?: string;
 }
-
-export type DifficultyLevel = 'easy' | 'medium' | 'hard';
 
 export interface Question {
   id: string;
   text: string;
-  difficulty: DifficultyLevel;
+  difficulty: 'easy' | 'medium' | 'hard';
+}
+
+export interface Answer {
+  questionId: string;
+  text: string;
 }
 
 export interface Exam {
   id: string;
   title: string;
-  createdBy: string; // Teacher ID
+  createdBy: string;
   questions: Question[];
   duration: number; // in seconds
-  scheduledFor?: Date;
   isActive: boolean;
+  subject?: string;
 }
 
 export interface ExamSubmission {
   id: string;
   examId: string;
   studentId: string;
-  studentName: string;
-  rollNo: string;
-  answers: {
-    questionId: string;
-    imageData: string; // base64 encoded canvas image
-  }[];
-  submittedAt: Date;
+  answers: Answer[];
+  submittedAt: string | Date;
   evaluated?: boolean;
   marks?: number;
   feedback?: string;
   percentage?: number;
+}
+
+// API response types
+export interface ApiResponse {
+  success: boolean;
+  message?: string;
+}
+
+export interface LoginResponse extends ApiResponse {
+  id: string;
+  name: string;
+  role: 'student' | 'teacher';
+  token?: string;
+}
+
+export interface RegisterResponse extends ApiResponse {
+  id: string;
+  name: string;
 }
