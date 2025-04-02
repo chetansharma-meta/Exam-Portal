@@ -31,7 +31,7 @@ export default function StudentDashboard() {
     setAvailableExams(allExams);
 
     // Get student's submissions
-    const studentSubmissions = getSubmissions(undefined, currentUser.id);
+    const studentSubmissions = getSubmissions(undefined, currentUser?.id);
     setSubmissions(studentSubmissions);
   }, [currentUser, getExams, getSubmissions, router]);
 
@@ -48,6 +48,10 @@ export default function StudentDashboard() {
 
   const handleStartExam = (examId: string) => {
     router.push(`/student/exam/${examId}`);
+  };
+
+  const handleViewResult = (submissionId: string) => {
+    router.push(`/student/result/${submissionId}`);
   };
 
   const handleLogout = () => {
@@ -109,7 +113,11 @@ export default function StudentDashboard() {
                 {submissions.map((submission) => {
                   const exam = availableExams.find(e => e.id === submission.examId);
                   return (
-                    <div key={submission.id} className="border rounded-lg p-4">
+                    <div
+                      key={submission.id}
+                      className="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer"
+                      onClick={() => submission.evaluated && handleViewResult(submission.id)}
+                    >
                       <div className="flex justify-between items-start mb-2">
                         <h3 className="font-semibold">
                           {exam?.title || "Unknown Exam"}
@@ -128,15 +136,26 @@ export default function StudentDashboard() {
                       {submission.evaluated && (
                         <>
                           <p className="text-sm font-medium mt-2">
-                          // components/student/StudentDashboard.tsx (continued)
                             Marks: {submission.marks} / {exam?.questions.length}
                           </p>
                           {submission.feedback && (
                             <div className="mt-2">
                               <p className="text-sm font-medium">Feedback:</p>
-                              <p className="text-sm text-gray-600 mt-1">{submission.feedback}</p>
+                              <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                                {submission.feedback}
+                              </p>
                             </div>
                           )}
+                          <Button
+                            variant="link"
+                            className="p-0 mt-2 h-auto text-blue-600"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewResult(submission.id);
+                            }}
+                          >
+                            View Detailed Result
+                          </Button>
                         </>
                       )}
                     </div>

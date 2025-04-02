@@ -32,7 +32,6 @@ export default function LoginForm() {
   // Register form state
   const [registerName, setRegisterName] = useState("");
   const [registerRollNo, setRegisterRollNo] = useState("");
-  const [registerUsername, setRegisterUsername] = useState("");
   const [registerPassword, setRegisterPassword] = useState("");
   const [registerConfirmPassword, setRegisterConfirmPassword] = useState("");
   const [registerError, setRegisterError] = useState("");
@@ -41,7 +40,7 @@ export default function LoginForm() {
 
   // Fetch subjects when component mounts
   useState(() => {
-    fetchSubjects();
+    // fetchSubjects();   
   });
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -82,7 +81,7 @@ export default function LoginForm() {
       } else {
         await registerTeacher({
           name: registerName,
-          username: registerUsername,
+          // Using name as username for teachers
           password: registerPassword,
           department,
         });
@@ -93,7 +92,6 @@ export default function LoginForm() {
       // Clear form
       setRegisterName("");
       setRegisterRollNo("");
-      setRegisterUsername("");
       setRegisterPassword("");
       setRegisterConfirmPassword("");
       setDepartment("");
@@ -179,23 +177,13 @@ export default function LoginForm() {
               />
             </div>
 
-            {role === "student" ? (
+            {role === "student" && (
               <div>
                 <Label htmlFor="register-roll-no">Roll Number</Label>
                 <Input
                   id="register-roll-no"
                   value={registerRollNo}
                   onChange={(e) => setRegisterRollNo(e.target.value)}
-                  required
-                />
-              </div>
-            ) : (
-              <div>
-                <Label htmlFor="register-username">Username</Label>
-                <Input
-                  id="register-username"
-                  value={registerUsername}
-                  onChange={(e) => setRegisterUsername(e.target.value)}
                   required
                 />
               </div>

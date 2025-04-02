@@ -3,11 +3,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
-export default function StudentForm({ onSubmit }) {
+export default function StudentForm({ onSubmit }:any) {
   const [name, setName] = useState("")
   const [studentId, setStudentId] = useState("")
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e:any) => {
     e.preventDefault()
     onSubmit({ name, studentId })
   }

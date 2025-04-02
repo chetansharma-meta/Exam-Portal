@@ -1,8 +1,8 @@
 // components/teacher/TestCreator.tsx
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,18 +10,30 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useAppStore } from "@/lib/store";
-import { DifficultyLevel, Question } from "@/lib/types";
+import { Exam, Question } from "@/lib/types";
 import { generateId } from "@/lib/store";
+import { toast } from "@/components/ui/use-toast";
+
+type DifficultyLevel = 'easy' | 'medium' | 'hard';
 
 export default function TestCreator() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const examId = searchParams.get("id");
+
   const currentUser = useAppStore(state => state.currentUser);
   const createExam = useAppStore(state => state.createExam);
+  const updateExam = useAppStore(state => state.updateExam);
+  const exams = useAppStore(state => state.exams);
 
   const [title, setTitle] = useState("");
+  const [subject, setSubject] = useState("");
   const [duration, setDuration] = useState(60); // Default 60 minutes
+  const [isActive, setIsActive] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [isEditMode, setIsEditMode] = useState(false);
 
   // New question form state
   const [newQuestion, setNewQuestion] = useState("");
@@ -33,9 +45,37 @@ export default function TestCreator() {
     questions: "",
   });
 
+  // Load exam data if in edit mode
+  useEffect(() => {
+    if (examId) {
+      const examToEdit = exams.find(exam => exam.id === examId);
+      if (examToEdit) {
+        setTitle(examToEdit.title);
+        setSubject(examToEdit.subject || "");
+        setDuration(examToEdit.duration / 60); // Convert seconds to minutes
+        setIsActive(examToEdit.isActive);
+        setQuestions(examToEdit.questions);
+        setIsEditMode(true);
+      } else {
+        // Handle invalid exam ID
+        toast({
+          title: "Error",
+          description: "Exam not found",
+          variant: "destructive"
+        });
+        router.push("/teacher/dashboard");
+      }
+    }
+  }, [examId, exams, router]);
+
   // Ensure user is a teacher
+  useEffect(() => {
+    if (!currentUser || currentUser.role !== "teacher") {
+      router.push("/");
+    }
+  }, [currentUser, router]);
+
   if (!currentUser || currentUser.role !== "teacher") {
-    router.push("/");
     return null;
   }
 
@@ -60,27 +100,50 @@ export default function TestCreator() {
     setQuestions(prev => prev.filter(q => q.id !== questionId));
   };
 
-  const handleCreateTest = () => {
-    // Validate
+  const validateForm = () => {
     const newErrors = {
       title: !title.trim() ? "Title is required" : "",
       questions: questions.length === 0 ? "At least one question is required" : "",
     };
 
     setErrors(newErrors);
+    return !newErrors.title && !newErrors.questions;
+  };
 
-    if (newErrors.title || newErrors.questions) {
+  const handleSaveTest = () => {
+    if (!validateForm()) {
       return;
     }
 
-    // Create the exam
-    createExam({
+    const examData: Partial<Exam> = {
       title,
+      subject,
       createdBy: currentUser.id,
       questions,
       duration: duration * 60, // Convert minutes to seconds
-      isActive: true,
-    });
+      isActive,
+    };
+
+    if (isEditMode && examId) {
+      // Update existing exam
+      updateExam({
+        id: examId,
+        ...examData,
+      } as Exam);
+      toast({
+        title: "Success",
+        description: `Exam ${isActive ? "published" : "saved as draft"} successfully`,
+      });
+    } else {
+      // Create new exam
+      createExam({
+        ...examData,
+      } as Exam);
+      toast({
+        title: "Success",
+        description: `Exam ${isActive ? "published" : "saved as draft"} successfully`,
+      });
+    }
 
     // Navigate back to dashboard
     router.push("/teacher/dashboard");
@@ -88,8 +151,22 @@ export default function TestCreator() {
 
   const handlePreview = () => {
     // In a real app, you might want to save a draft and preview it
-    // For this demo, we'll just show a simple alert
-    alert("Preview functionality would be implemented here");
+    if (!validateForm()) {
+      return;
+    }
+
+    // For this demo, we'll just show a simple alert with the exam details
+    const questionCount = questions.length;
+    const previewText = `
+      Title: ${title}
+      ${subject ? `Subject: ${subject}` : ''}
+      Duration: ${duration} minutes
+      Questions: ${questionCount} (${questions.filter(q => q.difficulty === 'easy').length} easy,
+      ${questions.filter(q => q.difficulty === 'medium').length} medium,
+      ${questions.filter(q => q.difficulty === 'hard').length} hard)
+      Status: ${isActive ? 'Published' : 'Draft'}
+    `;
+    alert(previewText);
   };
 
   const getDifficultyColor = (difficulty: DifficultyLevel) => {
@@ -107,7 +184,9 @@ export default function TestCreator() {
 
   return (
     <div className="container mx-auto p-4 max-w-4xl">
-      <h1 className="text-3xl font-bold mb-6">Create New Test</h1>
+      <h1 className="text-3xl font-bold mb-6">
+        {isEditMode ? "Edit Test" : "Create New Test"}
+      </h1>
 
       <Card className="mb-6">
         <CardHeader>
@@ -134,6 +213,15 @@ export default function TestCreator() {
             </div>
 
             <div>
+              <Label htmlFor="subject">Subject (Optional)</Label>
+              <Input
+                id="subject"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+              />
+            </div>
+
+            <div>
               <Label htmlFor="duration">Duration (minutes)</Label>
               <Input
                 id="duration"
@@ -143,6 +231,17 @@ export default function TestCreator() {
                 value={duration}
                 onChange={(e) => setDuration(Number(e.target.value))}
               />
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="active-status"
+                checked={isActive}
+                onCheckedChange={setIsActive}
+              />
+              <Label htmlFor="active-status">
+                {isActive ? "Published" : "Draft"}
+              </Label>
             </div>
           </div>
         </CardContent>
@@ -213,7 +312,7 @@ export default function TestCreator() {
                     value={newQuestionDifficulty}
                     onValueChange={(value) => setNewQuestionDifficulty(value as DifficultyLevel)}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger id="difficulty">
                       <SelectValue placeholder="Select difficulty" />
                     </SelectTrigger>
                     <SelectContent>
@@ -239,8 +338,8 @@ export default function TestCreator() {
           <Button variant="outline" onClick={handlePreview}>
             Preview Test
           </Button>
-          <Button onClick={handleCreateTest}>
-            Create Test
+          <Button onClick={handleSaveTest}>
+            {isEditMode ? "Update" : "Create"} {isActive ? "& Publish" : "& Save Draft"}
           </Button>
         </div>
       </div>

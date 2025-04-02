@@ -15,7 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAppStore } from "@/lib/store";
-import { Exam, ExamSubmission } from "@/lib/types";
+import { Exam, ExamSubmission, Question, Answer } from "@/lib/types";
 import { DownloadIcon } from 'lucide-react';
 
 export default function ResultViewer() {
@@ -32,13 +32,9 @@ export default function ResultViewer() {
   const [submissions, setSubmissions] = useState<ExamSubmission[]>([]);
   const [selectedSubmission, setSelectedSubmission] = useState<ExamSubmission | null>(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-
-  // Evaluation form
-  const [marks, setMarks] = useState<number>(0);
-  const [feedback, setFeedback] = useState<string>("");
+  const [overallFeedback, setOverallFeedback] = useState<string>("");
 
   useEffect(() => {
-    // Ensure user is a teacher
     if (!currentUser || currentUser.role !== "teacher") {
       router.push("/");
       return;
@@ -49,7 +45,6 @@ export default function ResultViewer() {
       return;
     }
 
-    // Get exam details
     const examData = getExam(examId);
     if (!examData) {
       router.push("/teacher/dashboard");
@@ -57,7 +52,6 @@ export default function ResultViewer() {
     }
     setExam(examData);
 
-    // Get submissions for this exam
     const examSubmissions = getSubmissions(examId);
     setSubmissions(examSubmissions);
   }, [currentUser, examId, getExam, getSubmissions, router]);
@@ -65,93 +59,59 @@ export default function ResultViewer() {
   const handleSubmissionSelect = (submission: ExamSubmission) => {
     setSelectedSubmission(submission);
     setCurrentQuestionIndex(0);
+    setOverallFeedback(submission.feedback || "");
+  };
 
-    // If already evaluated, pre-fill the form
-    if (submission.evaluated && submission.marks !== undefined) {
-      setMarks(submission.marks);
-      setFeedback(submission.feedback || "");
-    } else {
-      // Reset form for new evaluation
-      setMarks(0);
-      setFeedback("");
-    }
+  const handleQuestionFeedbackChange = (questionId: string, feedback: string) => {
+    if (!selectedSubmission) return;
+
+    const updatedAnswers = selectedSubmission.answers.map(answer =>
+      answer.questionId === questionId ? { ...answer, feedback } : answer
+    );
+
+    setSelectedSubmission({
+      ...selectedSubmission,
+      answers: updatedAnswers
+    });
+  };
+
+  const handleQuestionCorrectness = (questionId: string, isCorrect: boolean) => {
+    if (!selectedSubmission) return;
+
+    const updatedAnswers = selectedSubmission.answers.map(answer =>
+      answer.questionId === questionId ? { ...answer, isCorrect } : answer
+    );
+
+    setSelectedSubmission({
+      ...selectedSubmission,
+      answers: updatedAnswers
+    });
   };
 
   const handleEvaluate = () => {
     if (!selectedSubmission) return;
 
-    // Submit evaluation
+    // Calculate total marks based on correct answers
+    const totalMarks = selectedSubmission.answers.reduce(
+      (sum, answer) => sum + (answer.isCorrect ? 1 : 0), 0
+    );
+
+    const percentage = (totalMarks / exam!.questions.length) * 100;
+
     const updatedSubmission = evaluateSubmission(
       selectedSubmission.id,
-      marks,
-      feedback
+      totalMarks,
+      overallFeedback,
     );
 
     if (updatedSubmission) {
-      // Update the submissions list
       setSubmissions(prev =>
         prev.map(sub =>
           sub.id === updatedSubmission.id ? updatedSubmission : sub
         )
       );
-
-      // Update selected submission
       setSelectedSubmission(updatedSubmission);
     }
-  };
-
-  // Function to generate PDF for a specific student
-  const generateStudentPDF = (submission: ExamSubmission) => {
-    if (!exam) return;
-
-    // This would typically use a library like jsPDF or pdfmake
-    // For now, we'll simulate by preparing the data that would go into the PDF
-    const pdfData = {
-      examTitle: exam.title,
-      studentName: submission.studentName,
-      rollNo: submission.rollNo,
-      marks: submission.marks || 0,
-      totalMarks: exam.questions.length,
-      percentage: submission.percentage || 0,
-      feedback: submission.feedback || "",
-      date: new Date().toLocaleDateString(),
-      questions: exam.questions.map((q, idx) => ({
-        question: q.text,
-        answerProvided: submission.answers[idx]?.imageData ? "Yes (Image)" : "No"
-      }))
-    };
-
-    // In a real implementation, we would generate and download the PDF here
-    console.log("Generating PDF for student:", pdfData);
-
-    // Mock download - in production, replace with actual PDF generation
-    alert(`Downloading PDF for ${submission.studentName} - ${submission.rollNo}`);
-  };
-
-  // Function to generate PDF for all students
-  const generateAllResultsPDF = () => {
-    if (!exam || submissions.length === 0) return;
-
-    // This would prepare data for all students
-    const pdfData = {
-      examTitle: exam.title,
-      date: new Date().toLocaleDateString(),
-      students: submissions.map(sub => ({
-        name: sub.studentName,
-        rollNo: sub.rollNo,
-        marks: sub.marks || 0,
-        totalMarks: exam.questions.length,
-        percentage: sub.percentage || 0,
-        status: (sub.percentage || 0) >= 60 ? "Pass" : "Fail",
-        evaluated: sub.evaluated
-      }))
-    };
-
-    // In a real implementation, we would generate and download the PDF here
-    console.log("Generating PDF for all students:", pdfData);
-
-    // Mock download - in production, replace with actual PDF generation
-    alert(`Downloading results for all students for ${exam.title}`);
   };
 
   if (!exam) {
@@ -165,32 +125,9 @@ export default function ResultViewer() {
           <h1 className="text-3xl font-bold">{exam.title} - Results</h1>
           <p className="text-gray-600">{exam.questions.length} questions, {Math.floor(exam.duration / 60)} minutes</p>
         </div>
-
-        <div className="flex space-x-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="flex items-center">
-                <DownloadIcon className="h-4 w-4 mr-2" />
-                Download PDF
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem
-                onClick={() => selectedSubmission && generateStudentPDF(selectedSubmission)}
-                disabled={!selectedSubmission}
-                className={!selectedSubmission ? "text-gray-400 cursor-not-allowed" : ""}
-              >
-                Current Student
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={generateAllResultsPDF}>
-                All Results
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <Button onClick={() => router.push("/teacher/dashboard")} variant="outline">
-            Back to Dashboard
-          </Button>
-        </div>
+        <Button onClick={() => router.push("/teacher/dashboard")} variant="outline">
+          Back to Dashboard
+        </Button>
       </div>
 
       <div className="grid md:grid-cols-12 gap-6">
@@ -217,25 +154,13 @@ export default function ResultViewer() {
                           <h3 className="font-medium">{submission.studentName}</h3>
                           <p className="text-sm text-gray-600">Roll No: {submission.rollNo}</p>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          {submission.evaluated ? (
-                            <Badge className={submission.percentage && submission.percentage >= 60 ? "bg-green-600" : "bg-red-600"}>
-                              {submission.marks} / {exam.questions.length}
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline">Not evaluated</Badge>
-                          )}
-                          <Button
-                            variant="ghost"
-                            className="h-6 w-6 p-0"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              generateStudentPDF(submission);
-                            }}
-                          >
-                            <DownloadIcon className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        {submission.evaluated ? (
+                          <Badge className={submission.percentage && submission.percentage >= 60 ? "bg-green-600" : "bg-red-600"}>
+                            {submission.marks} / {exam.questions.length}
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline">Not evaluated</Badge>
+                        )}
                       </div>
                       <p className="text-xs text-gray-500 mt-1">
                         Submitted: {new Date(submission.submittedAt).toLocaleString()}
@@ -252,26 +177,14 @@ export default function ResultViewer() {
           {selectedSubmission ? (
             <Card>
               <CardHeader>
-                <div className="flex justify-between items-center">
-                  <CardTitle>
-                    {selectedSubmission.studentName} - {selectedSubmission.rollNo}
-                  </CardTitle>
-                  <div className="flex items-center space-x-2">
-                    {selectedSubmission.evaluated && (
-                      <Badge className={selectedSubmission.percentage && selectedSubmission.percentage >= 60 ? "bg-green-600" : "bg-red-600"}>
-                        {selectedSubmission.marks} / {exam.questions.length}
-                      </Badge>
-                    )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex items-center"
-                      onClick={() => generateStudentPDF(selectedSubmission)}
-                    >
-                      <DownloadIcon className="h-4 w-4 mr-1" /> PDF
-                    </Button>
-                  </div>
-                </div>
+                <CardTitle>
+                  {selectedSubmission.studentName} - {selectedSubmission.rollNo}
+                  {selectedSubmission.evaluated && (
+                    <Badge className={`ml-2 ${selectedSubmission.percentage && selectedSubmission.percentage >= 60 ? "bg-green-600" : "bg-red-600"}`}>
+                      {selectedSubmission.marks} / {exam.questions.length}
+                    </Badge>
+                  )}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <Tabs defaultValue="answers">
@@ -291,17 +204,55 @@ export default function ResultViewer() {
 
                       <div className="border rounded-lg p-4">
                         <h3 className="font-medium mb-2">Student's Answer:</h3>
-                        {selectedSubmission.answers[currentQuestionIndex]?.imageData ? (
-                          <div className="border bg-gray-50 rounded-lg overflow-hidden">
-                            <img
-                              src={selectedSubmission.answers[currentQuestionIndex].imageData}
-                              alt="Student answer"
-                              className="w-full h-auto"
-                            />
-                          </div>
+                        {selectedSubmission.answers[currentQuestionIndex]?.text ? (
+                          <p className="bg-gray-50 p-3 rounded">
+                            {selectedSubmission.answers[currentQuestionIndex].text}
+                          </p>
                         ) : (
                           <p className="text-gray-500">No answer provided</p>
                         )}
+                      </div>
+
+                      <div className="border rounded-lg p-4 space-y-4">
+                        <div className="flex items-center space-x-4">
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              name={`correctness-${currentQuestionIndex}`}
+                              checked={selectedSubmission.answers[currentQuestionIndex]?.isCorrect === true}
+                              onChange={() => handleQuestionCorrectness(
+                                exam.questions[currentQuestionIndex].id,
+                                true
+                              )}
+                            />
+                            <span>Correct</span>
+                          </label>
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              name={`correctness-${currentQuestionIndex}`}
+                              checked={selectedSubmission.answers[currentQuestionIndex]?.isCorrect === false}
+                              onChange={() => handleQuestionCorrectness(
+                                exam.questions[currentQuestionIndex].id,
+                                false
+                              )}
+                            />
+                            <span>Incorrect</span>
+                          </label>
+                        </div>
+
+                        <div>
+                          <label className="block font-medium mb-1">Question Feedback</label>
+                          <Textarea
+                            rows={3}
+                            value={selectedSubmission.answers[currentQuestionIndex]?.feedback || ""}
+                            onChange={(e) => handleQuestionFeedbackChange(
+                              exam.questions[currentQuestionIndex].id,
+                              e.target.value
+                            )}
+                            placeholder="Add specific feedback for this question..."
+                          />
+                        </div>
                       </div>
 
                       <div className="flex justify-between">
@@ -326,29 +277,20 @@ export default function ResultViewer() {
                   <TabsContent value="evaluation">
                     <div className="space-y-4">
                       <div>
-                        <label className="block font-medium mb-1">
-                          Marks (out of {exam.questions.length})
-                        </label>
-                        <Input
-                          type="number"
-                          min={0}
-                          max={exam.questions.length}
-                          value={marks}
-                          onChange={(e) => setMarks(Number(e.target.value))}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block font-medium mb-1">Feedback</label>
+                        <label className="block font-medium mb-1">Overall Feedback</label>
                         <Textarea
-                          rows={4}
-                          value={feedback}
-                          onChange={(e) => setFeedback(e.target.value)}
-                          placeholder="Provide feedback for the student..."
+                          rows={6}
+                          value={overallFeedback}
+                          onChange={(e) => setOverallFeedback(e.target.value)}
+                          placeholder="Provide overall feedback for the student..."
                         />
                       </div>
 
-                      <Button onClick={handleEvaluate} className="w-full">
+                      <Button
+                        onClick={handleEvaluate}
+                        className="w-full"
+                        disabled={!selectedSubmission.answers.every(answer => answer.isCorrect !== undefined)}
+                      >
                         {selectedSubmission.evaluated ? "Update Evaluation" : "Submit Evaluation"}
                       </Button>
                     </div>

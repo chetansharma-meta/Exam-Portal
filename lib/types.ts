@@ -32,7 +32,9 @@ export interface Question {
 
 export interface Answer {
   questionId: string;
+  isCorrect: boolean;
   text: string;
+  feedback?: string;
 }
 
 export interface Exam {
@@ -44,6 +46,7 @@ export interface Exam {
   isActive: boolean;
   subject?: string;
 }
+
 
 export interface ExamSubmission {
   id: string;

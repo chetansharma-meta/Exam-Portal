@@ -1,7 +1,7 @@
 // lib/store.ts
 import { create } from 'zustand';
 import { persist, PersistOptions } from 'zustand/middleware';
-import { User, Student, Teacher, Exam, ExamSubmission } from './types';
+import { User, Student, Teacher, Exam, ExamSubmission, Question } from './types';
 import apiService from '@/lib/api';
 
 // Generate a unique ID
@@ -35,6 +35,7 @@ interface AppState {
 
   // Exam methods
   createExam: (exam: Omit<Exam, 'id'>) => Exam;
+  updateExam: (exam: Exam) => Exam;
   getExams: (teacherId?: string) => Exam[];
   getExam: (id: string) => Exam | undefined;
   fetchQuestions: () => Promise<void>;
@@ -70,9 +71,68 @@ type StorageValue = {
   version: number;
 }
 
+// Default admin users
+const defaultStudentAdmin: Student = {
+  id: "admin-student",
+  name: "Admin Student",
+  role: "student",
+  password: "admin123",
+  rollNo: "admin",
+  department: "Administration",
+  semester: "N/A"
+};
+
+const defaultTeacherAdmin: Teacher = {
+  id: "admin-teacher",
+  name: "Admin Teacher",
+  role: "teacher",
+  password: "admin123",
+  username: "adminteacher",
+  department: "Administration"
+};
+
+// Default exam with 5 questions
+const defaultExamQuestions: Question[] = [
+  {
+    id: "q1",
+    text: "What is the primary purpose of unit testing?",
+    difficulty: "easy"
+  },
+  {
+    id: "q2",
+    text: "What is the difference between == and === in JavaScript?",
+    difficulty: "medium"
+  },
+  {
+    id: "q3",
+    text: "What is the time complexity of the quicksort algorithm?",
+    difficulty: "hard"
+  },
+  {
+    id: "q4",
+    text: "What is the difference between a stack and a queue?",
+    difficulty: "easy"
+  },
+  {
+    id: "q5",
+    text: "What is the purpose of a constructor in Java?",
+    difficulty: "medium"
+  }
+];
+
+const defaultExam: Exam = {
+  id: "default-exam",
+  title: "Computer Science Fundamentals",
+  subject: "Computer Science",
+  duration: 1800, // 30 minutes
+  createdBy: "admin-teacher",
+  questions: defaultExamQuestions,
+  isActive: true
+};
+
 // Sample data (will be replaced with API data)
-const initialUsers: User[] = [];
-const initialExams: Exam[] = [];
+const initialUsers: User[] = [defaultStudentAdmin, defaultTeacherAdmin];
+const initialExams: Exam[] = [defaultExam];
 
 // Define custom storage with proper types
 const customStorage = {
@@ -116,6 +176,39 @@ const customStorage = {
 const persistOptions: PersistOptions<AppState> = {
   name: 'exam-app-storage',
   storage: customStorage as any, // Use type assertion since we're using a custom storage
+  // Add onRehydrateStorage to ensure default admin users are always present
+  onRehydrateStorage: (state) => {
+    return (rehydratedState, error) => {
+      if (error || !rehydratedState) {
+        console.error('Error rehydrating state:', error);
+        return;
+      }
+
+      // Ensure admin users exist after rehydration
+      const hasStudentAdmin = rehydratedState.users.some(user => user.id === defaultStudentAdmin.id);
+      const hasTeacherAdmin = rehydratedState.users.some(user => user.id === defaultTeacherAdmin.id);
+
+      if (!hasStudentAdmin || !hasTeacherAdmin) {
+        const updatedUsers = [...rehydratedState.users];
+
+        if (!hasStudentAdmin) {
+          updatedUsers.push(defaultStudentAdmin);
+        }
+
+        if (!hasTeacherAdmin) {
+          updatedUsers.push(defaultTeacherAdmin);
+        }
+
+        rehydratedState.users = updatedUsers;
+      }
+
+      // Ensure default exam exists
+      const hasDefaultExam = rehydratedState.exams.some(exam => exam.id === defaultExam.id);
+      if (!hasDefaultExam) {
+        rehydratedState.exams = [...rehydratedState.exams, defaultExam];
+      }
+    };
+  }
 };
 
 export const useAppStore = create<AppState>()(
@@ -134,6 +227,17 @@ export const useAppStore = create<AppState>()(
         set({ isLoading: true, error: null });
 
         try {
+          // Check for admin users first
+          if (role === 'student' && username === 'admin' && password === 'admin123') {
+            set({ currentUser: defaultStudentAdmin, isLoading: false });
+            return defaultStudentAdmin;
+          }
+
+          if (role === 'teacher' && username === 'adminteacher' && password === 'admin123') {
+            set({ currentUser: defaultTeacherAdmin, isLoading: false });
+            return defaultTeacherAdmin;
+          }
+
           let userData;
 
           if (role === 'student') {
@@ -175,6 +279,8 @@ export const useAppStore = create<AppState>()(
 
       registerStudent: async (userData) => {
         set({ isLoading: true, error: null });
+
+        console.log('Registering student:', userData);
 
         try {
           const response = await apiService.registerStudent({
@@ -253,6 +359,16 @@ export const useAppStore = create<AppState>()(
         const newExam = { ...examData, id: generateId() };
         set(state => ({ exams: [...state.exams, newExam] }));
         return newExam;
+      },
+
+      updateExam: (examData) => {
+        const updatedExam = { ...examData };
+        set(state => ({
+          exams: state.exams.map(exam =>
+            exam.id === updatedExam.id ? updatedExam : exam
+          )
+        }));
+        return updatedExam;
       },
 
       getExams: (teacherId) => {
